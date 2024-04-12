@@ -1,133 +1,154 @@
 ////////////////////////////////////////////////////////////////////////
-// API
-
-export function Atom(value) {
-  const r = new Reactor()
-  r.latest = value
-  const atom = () => r.observe()
-  atom.set = (newValue) => {
-    if (newValue === r.latest) { return }
-    r.stale()
-    r.latest = newValue
-    r.fresh()
-  }
-  atom.peek = () => r.latest
-  atom.dispose = r.dispose.bind(r)
-  atom.label = (lbl) => ((r._label = lbl), atom)
-  atom.$r = r
-  return atom
-}
-
-export function Calc(fn) {
-  const r = new Reactor()
-  r.effect = () => r.latest = r.track(fn)
-  r.effect() // calculate the initial value
-  const calc = () => r.observe()
-  calc.peek = () => r.latest
-  calc.dispose = r.dispose.bind(r)
-  calc.label = (lbl) => ((r._label = lbl), calc)
-  calc.$r = r
-  return calc
-}
-
-export function Effect(action) {
-  return Calc(() => { action() })
-}
-
-
-////////////////////////////////////////////////////////////////////////
 // Implementation
 
-export class Reactor {
-  static active = null
-
+export class Atom {
   _label = undefined
-
-  _inputs = new Set()
+  _latest = undefined
   _outputs = new Set()
+  _version = 0
 
-  _staleInputs = 0
-  _inputChanged = false
-  _becomingStale = false
-
-  latest = undefined
-  effect = undefined
-
-  observe() {
-    let active = Reactor.active
-    if (active) {
-      this._outputs.add(active)
-      active._inputs.add(this)
-      if ((active == this) || (this._staleInputs > 0)) {
-        throw Error(`Cycle detected in ${active._label ?? '?'}`)
-      }
-    }
-    return this.latest
+  get value() {
+    Calc.active?._observe(this)
+    return this._latest
+  }
+  set value(v) {
+    if (v === this._latest) { return }
+    Effect.startBatch()
+    this._stale()
+    this._latest = v
+    this._version++
+    Effect.endBatch()
   }
 
-  stale() {
-    if (this._becomingStale) { return /* cycle */ }
-    if (++this._staleInputs == 1) {
-      this._becomingStale = true
-      for (const o of this._outputs) { o.stale() }
-      this._becomingStale = false
-    }
-  }
-
-  fresh(changed = true) {
-    if (this._staleInputs == 0) { return /* cycle */ }
-    if (changed) { this._inputChanged = true }
-    if (--this._staleInputs == 0) {
-      if (this._inputChanged && (this.effect != null)) {
-        let oldValue = this.latest
-        this.effect()
-        changed = (this.latest !== oldValue)
-      }
-      this._inputChanged = false
-      for (const o of this._outputs) { o.fresh(changed) }
-    }
-  }
-
-  track(fn) {
-    const oldInputs = this._inputs
-    this._inputs = new Set()
-    const oldActive = Reactor.active
-    Reactor.active = this
-    try {
-      return fn()
-    } catch(err) {
-      return err
-    } finally {
-      Reactor.active = oldActive
-      for (const i of oldInputs.difference(this._inputs)) {
-        i._outputs.delete(this)
-      }
-    }
-  }
-
+  peek() { return this._latest }
+  label(l) { return (this._label = l), this }
+  _stale() { for (const o of this._outputs) { o._stale() } }
+  _refresh() { return this._version }
+  
   dispose() {
-    for (const i of this._inputs) { i._outputs.delete(this) }
     for (const o of this._outputs) { o._inputs.delete(this) }
-    this._inputs.clear()
     this._outputs.clear()
   }
 }
 
 
+export class Calc extends Atom {
+  static active = null
 
-////////////////////////////////////////////////////////////////////////
-// Shims
+  _inputs = new Map()
+  _compute = undefined
+  _isRunning = false
+  _isStale = false
 
-if (Set.prototype.difference == null) {
-  Set.prototype.difference = function(other) {
-    const diff = new Set()
-    if (this.size > other.size) {
-      for (let item of other) if (!this.has(item)) diff.add(item);
-    } else {
-      for (let item of this) if (!other.has(item)) diff.add(item);
+  get value() {
+    Calc.active?._observe(this)
+    if (this._isRunning) {
+      throw Error('Cycle detected in ' + this._label)
     }
-    return diff
+    this._refresh()
+    return this._latest
+  }
+
+  _observe(input) {
+    this._inputs.set(input, input._version)
+    input._outputs.add(this)
+  }
+
+  _stale() {
+    if (this._isStale) { return }
+    this._isStale = true
+    super._stale()
+  }
+
+  _refresh() {
+    if (this._isRunning) { return ++this._version }
+    if (this._mustRecompute()) {
+      const oldLatest = this._latest
+      const oldInputs = this._inputs
+      const oldActive = Calc.active
+      this._inputs = new Map()
+      this._isRunning = true
+      Calc.active = this
+      try {
+        this._latest = this._compute()
+      } catch (err) {
+        this._latest = err
+      }
+      Calc.active = oldActive
+      this._isStale = false
+      this._isRunning = false
+      if (this._latest !== oldLatest) { ++this._version }
+      for (const [i] of oldInputs) {
+        if (!this._inputs.has(i)) { i._outputs.delete(this) }
+      }
+    }
+    return this._version
+  }
+
+  _mustRecompute() {
+    if (this._version == 0) { return true }
+    if (!this._isStale) { return false }
+    for (const [i, v] of this._inputs) {
+      if (i._refresh() > v) { return true }
+    }
+    return false
+  }
+
+  dispose() {
+    super.dispose()
+    for (const i of this._inputs) { i._outputs.delete(this) }
+    this._inputs.clear()
   }
 }
 
+export class Effect extends Calc {
+  static batch = new Set()
+  static batchDepth = 0
+
+  static startBatch() {
+    ++Effect.batchDepth
+  }
+
+  static endBatch() {
+    if (Effect.batchDepth == 0) { return }
+    if (--Effect.batchDepth == 0) {
+      for (const e of Effect.batch) { e._refresh() }
+      Effect.batch.clear()
+    }
+  }
+
+  _stale() {
+    Effect.batch.add(this)
+    this._isStale = true
+  }
+}
+
+
+Atom.label = (n => () => `A${++n}`)(0)
+Calc.label = (n => () => `C${++n}`)(0)
+Effect.label = (n => () => `E${++n}`)(0)
+
+
+////////////////////////////////////////////////////////////////////////
+// API
+
+export const atom = x =>
+  Object.assign((new Atom), {_latest: x, _label: Atom.label()})
+
+export const calc = f =>
+  Object.assign((new Calc), {_compute: f, _label: Calc.label()})
+
+export const effect = f => {
+  const e = new Effect()
+  e._compute = () => { f() }
+  e._label = Effect.label()
+  e._refresh()
+  return e
+}
+
+export const batch = f => {
+  Effect.startBatch()
+  f()
+  Effect.endBatch()
+}
 
