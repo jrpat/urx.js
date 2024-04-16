@@ -1,4 +1,25 @@
 ////////////////////////////////////////////////////////////////////////
+// API
+
+export const atom = x =>
+  Object.assign((new Atom), {_latest: x, _label: Atom.label()})
+
+export const calc = f =>
+  Object.assign((new Calc), {_compute: f, _label: Calc.label()})
+
+export const effect = f => {
+  const e = new Effect()
+  e._compute = () => { f() }
+  e._label = Effect.label()
+  e._refresh()
+  e._version = 1
+  return e
+}
+
+export const batch = f => { Effect.batch(1) ; f() ; Effect.batch(-1) }
+
+
+////////////////////////////////////////////////////////////////////////
 // Implementation
 
 export class Atom {
@@ -13,11 +34,11 @@ export class Atom {
   }
   set value(v) {
     if (v === this._latest) { return }
-    Effect.startBatch()
+    Effect.batch(1)
     this._stale()
     this._latest = v
     this._version++
-    Effect.endBatch()
+    Effect.batch(-1)
   }
 
   peek() { return this._latest }
@@ -41,11 +62,11 @@ export class Calc extends Atom {
   _isStale = false
 
   get value() {
+    this._refresh()
     Calc.active?._observe(this)
     if (this._isRunning) {
       throw Error('Cycle detected in ' + this._label)
     }
-    this._refresh()
     return this._latest
   }
 
@@ -54,14 +75,8 @@ export class Calc extends Atom {
     input._outputs.add(this)
   }
 
-  _stale() {
-    if (this._isStale) { return }
-    this._isStale = true
-    super._stale()
-  }
-
   _refresh() {
-    if (this._isRunning) { return ++this._version }
+    if (this._isRunning) { return ++this._version } // cycle
     if (this._mustRecompute()) {
       const oldLatest = this._latest
       const oldInputs = this._inputs
@@ -85,6 +100,12 @@ export class Calc extends Atom {
     return this._version
   }
 
+  _stale() {
+    if (this._isStale) { return } // cycle
+    this._isStale = true
+    super._stale()
+  }
+
   _mustRecompute() {
     if (this._version == 0) { return true }
     if (!this._isStale) { return false }
@@ -102,23 +123,20 @@ export class Calc extends Atom {
 }
 
 export class Effect extends Calc {
-  static batch = new Set()
-  static batchDepth = 0
+  static _batch = new Set()
+  static _depth = 0
 
-  static startBatch() {
-    ++Effect.batchDepth
-  }
-
-  static endBatch() {
-    if (Effect.batchDepth == 0) { return }
-    if (--Effect.batchDepth == 0) {
-      for (const e of Effect.batch) { e._refresh() }
-      Effect.batch.clear()
+  static batch(n) {
+    Effect._depth += n
+    if (Effect._depth < 0) { Effect._depth = 0; return }
+    if (Effect._depth == 0) {
+      for (const e of Effect._batch) { e._refresh() }
+      Effect._batch.clear()
     }
   }
 
   _stale() {
-    Effect.batch.add(this)
+    Effect._batch.add(this)
     this._isStale = true
   }
 }
@@ -128,27 +146,4 @@ Atom.label = (n => () => `A${++n}`)(0)
 Calc.label = (n => () => `C${++n}`)(0)
 Effect.label = (n => () => `E${++n}`)(0)
 
-
-////////////////////////////////////////////////////////////////////////
-// API
-
-export const atom = x =>
-  Object.assign((new Atom), {_latest: x, _label: Atom.label()})
-
-export const calc = f =>
-  Object.assign((new Calc), {_compute: f, _label: Calc.label()})
-
-export const effect = f => {
-  const e = new Effect()
-  e._compute = () => { f() }
-  e._label = Effect.label()
-  e._refresh()
-  return e
-}
-
-export const batch = f => {
-  Effect.startBatch()
-  f()
-  Effect.endBatch()
-}
 

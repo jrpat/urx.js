@@ -1,0 +1,75 @@
+<!doctype html>
+<html>
+  <head>
+    <link rel=stylesheet href="/base.css">
+    <script defer src="/util.js"></script>
+    <style>
+      #logOutput {
+        position: fixed;
+        right: 0;
+        top: 0;
+        height: 100%;
+        width: 20vw;
+        overflow: scroll;
+        border-left: 1px solid var(--line);
+        background: var(--pane);
+        font-size: 0.75em;
+      }
+      
+      #app { padding: 1em; }
+    </style>
+  </head>
+
+  <body vbox=stretch>
+    <div id=app></div>
+    <template name=simple>
+      <script>
+        const x = atom(5)
+        const hilo = calc(() => (x.value > 99) ? 'high' : '-low') 
+        after(1000, () => { x.value = 10 })
+        after(2000, () => { x.value = 50 })
+        after(3000, () => { x.value = 100 })
+        after(4000, () => { console.log('ok') })
+        return {x, hilo}
+      </script>
+
+      {{ x.value.toString().padStart(3, '.') }}
+      {{ hilo.value + ' ' + (Date.now()) }}
+      <br>
+      x = {{ x.value }}
+    </template>
+
+    <template name=my-component ignore>
+      <script>
+        const x = Atom(5)
+        const arr = Atom([1,2,3])
+        return {x, arr}
+      </script>
+
+      <div>x = {{ x() }}</div>
+      <input name:="x()">
+      <show if="x > 5">
+        x is high!
+      </show>
+      <ul>
+        <for each="item of arr()">
+          <li>{{ item }}</li>
+        </for>
+      </ul>
+      <button disabled?="x() > 10"></button>
+    </template>
+
+<!--    <div id="_test" foo:=bar bar?=baz>ok</div>-->
+
+    <template name=my-tpl ignore>
+      <!--| x() |-->
+    </template>
+  </body>
+
+  <script type=module>
+    import {ui} from '/urx-dom.js'
+    window.ui = ui
+    ui('simple').renderInto($('#app'))
+  </script>
+</html>
+
