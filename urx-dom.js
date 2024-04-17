@@ -50,42 +50,52 @@ function $text(parent, node, state) {
   }
 }
 
+const A = {
+  ':': (state, node, {name, value}) => {
+    node.removeAttribute(name)
+    name = name.slice(0, -1)
+    const fn = Function(...keys(state), `return String(${value})`)
+    effect(() => parent.setAttribute(name, fn(...vals(state))))
+  },
+
+  '?': (state, node, {name, value}) => {
+    node.removeAttribute(name)
+    name = name.slice(0, -1)
+    const fn = Function(...keys(state), `return Boolean(${value})`)
+    effect(() => {
+      if (fn(...vals(state))) { node.setAttribute(name, '') }
+      else { node.removeAttribute(name) }
+    })
+  },
+
+  '@': (state, node, {name, value}) => {
+    node.removeAttribute(name)
+    name = name.slice(1)
+    const fn = Function(...keys(state), `return (${value})`)
+    const handler = fn(...vals(state))
+    node.addEventListener(name, handler)
+  },
+}
+
 function $elem(parent, node, state) {
   if (node instanceof Element) {
     parent = parent.appendChild(node.cloneNode(false))
-    for (const attr of node.attributes) {
-      let [name, expr] = [attr.name, attr.value]
-      if (name.endsWith(':')) {
-        parent.removeAttribute(name)
-        name = name.slice(0, -1)
-        const fn = Function(...keys(state), `return String(${expr})`)
-        effect(() => parent.setAttribute(name, fn(...vals(state))))
-      } else if (name.endsWith('?')) {
-        parent.removeAttribute(name)
-        name = name.slice(0, -1)
-        const fn = Function(...keys(state), `return Boolean(${expr})`)
-        effect(() => parent.setAttribute(name, fn(...vals(state))))
-      } else if (name.startsWith('@')) {
-        parent.removeAttribute(name)
-        name = name.slice(1)
-        const fn = Function(...keys(state), `return (${expr})`)
-        const handler = fn(...vals(state))
-        parent.addEventListener(name, handler)
-      }
+    for (const a of node.attributes) {
+      (A[a.name.at(-1)] ?? A[a.name.at(0)])?.(state, parent, a)
     }
   }
   for (const child of node.childNodes) {
     switch (child.nodeType) {
       case Node.TEXT_NODE:
-        $text(parent, child, state)
-        break
+        $text(parent, child, state); break
       case Node.ELEMENT_NODE:
-        $elem(parent, child, state)
-        break
+        if (ui.$.has(parent.name))
+        $elem(parent, child, state); break
       default:
-        into.appendChild(child)
-        break
+        into.appendChild(child); break
     }
   }
 }
+
+ui.$.set('SHOW', function())
 
