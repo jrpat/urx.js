@@ -36,7 +36,9 @@
       {{ x.value.toString().padStart(3, '.') }}
       {{ hilo.value + ' ' + (Date.now()) }}
       <br>
-      x = {{ x.value }}
+      <b foo:="x.value">x = {{ x.value }}</b>
+      <input value:="x.value">
+      <button @click="(event) => console.log(event)">click me</button>
     </template>
 
     <template name=my-component ignore>
