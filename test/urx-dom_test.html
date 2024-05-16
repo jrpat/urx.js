@@ -1,8 +1,8 @@
 <!doctype html>
 <html>
   <head>
-    <link rel=stylesheet href="/base.css">
-    <script defer src="/util.js"></script>
+    <link rel=stylesheet href="./base.css">
+    <script defer src="./util.js"></script>
     <style>
       #logOutput {
         position: fixed;
@@ -22,23 +22,56 @@
 
   <body vbox=stretch>
     <div id=app></div>
+
     <template name=simple>
       <script>
         const x = atom(5)
+        const hilo = calc(() => (x.value > 99) ? 'high' : '-low')
+        window.hilo = hilo
+        const flub = () => console.log(hilo.value)
+        async function doit() {
+          await after(1000, () => { x.value = 50 })
+          await after(1000, () => { x.value = 100 })
+          await after(1000, () => { console.log('ok') })
+        }
+        effect(() => log(x.value))
+        doit()
+        return {x, hilo, flub}
+      </script>
+      {{ 'hilo = ' + hilo.value }}
+    </template>
+
+    <template name=simple ignore>
+      <script>
+        const x = atom(5)
         const hilo = calc(() => (x.value > 99) ? 'high' : '-low') 
-        after(1000, () => { x.value = 10 })
-        after(2000, () => { x.value = 50 })
-        after(3000, () => { x.value = 100 })
-        after(4000, () => { console.log('ok') })
+        async function doit() {
+          await after(1000, () => { x.value = 10 })
+          await after(1000, () => { x.value = 50 })
+          await after(1000, () => { x.value = 100 })
+          await after(1000, () => { console.log('ok') })
+        }
+        doit()
         return {x, hilo}
       </script>
 
       {{ x.value.toString().padStart(3, '.') }}
+      <br>
       {{ hilo.value + ' ' + (Date.now()) }}
       <br>
       <b foo:="x.value">x = {{ x.value }}</b>
       <input value:="x.value">
       <button disabled?="x.value < 100" @click="(event) => console.log(event)">click me</button>
+      <br>
+      <show if="x.value < 100">
+        <show if="x.value < 11">very</show>low
+      </show>
+      <switch>
+        <show if="x.value == 5">five</show>
+        <show if="x.value == 10">ten</show>
+        <show if="x.value == 50">fifty</show>
+        <show if="x.value == 100">one hundred</show>
+      </switch>
     </template>
 
     <template name=my-component ignore>
@@ -69,9 +102,10 @@
   </body>
 
   <script type=module>
-    import {ui} from '/urx-dom.js'
-    window.ui = ui
-    ui('simple').renderInto($('#app'))
+    import ui from '/lib/urx-dom.js'
+    import * as urx from '/lib/urx.js'
+    Object.assign(window, {ui, urx})
+    ui.render('simple', $('#app'))
   </script>
 </html>
 

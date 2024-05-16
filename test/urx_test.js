@@ -5,7 +5,7 @@ function notest(){}
 
 ////////////////////////////////////////////////////////////////////////
 
-import {atom, calc, effect, batch} from '/urx-part1.js'
+import {atom, calc, effect, batch} from '/lib/urx.js'
 
 test('Plain', () => {
   let out = []
@@ -14,6 +14,18 @@ test('Plain', () => {
   let e1 = effect(() => { out.push(c1.value) })
   a1.value = 'new'
   expect(out).to.deep.equal(['old!', 'new!'])
+})
+
+test('Chain', () => {
+  let out = []
+  let a1 = atom('foo')
+  let c1 = calc(() => a1.value + '.')
+  let c2 = calc(() => c1.value + '.')
+  let c3 = calc(() => c2.value + '.')
+  let e1 = effect(() => { out.push(c3.value) })
+  a1.value = 'bar'
+  a1.value = 'baz'
+  expect(out).to.deep.equal(['foo...', 'bar...', 'baz...'])
 })
 
 test('Cycle Static Direct', () => {

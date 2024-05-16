@@ -9,7 +9,7 @@
   window.$=D.querySelector.bind(D); window.$$=D.querySelectorAll.bind(D)
   window.html=(s)=>{let d=D.createElement('template');
     d.innerHTML=s.trim(); return d.content.cloneNode(true)}
-  window.after=(t,f)=>setTimeout(f,t)
+  window.after=async(t,f)=>new Promise(ok=>setTimeout(()=>ok(f()), t))
 }());
 
 ////////////////////////////////////////////////////////////////////////
